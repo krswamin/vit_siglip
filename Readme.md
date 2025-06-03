@@ -1,18 +1,19 @@
 # SIGLIp Vision Transformer: Implementation from Scratch
 
-## <span style="color: green">  JUPYTER NOTEBOOK RUNNING NOTES </span>
-### Author's(freeCodeCamp's) original implementation of the SIGLIP : Vision Transformer 
+## <span style="color: green">  1. JUPYTER NOTEBOOK RUNNING NOTES </span>
+### 1.1 Author's(freeCodeCamp's) original implementation of the SIGLIP : Vision Transformer 
 The original implementation of this code is from freeCodeCamp.org. Refer to the following video and code. \
 https://www.youtube.com/watch?v=4XgDdxpXHEQ \
 https://colab.research.google.com/drive/1Q6bfCG5UZ7ypBWft9auptcD4Pz5zQQQb?usp=sharing#scrollTo=1EaWO-aNOk3v \
 A copy of the original notebook can also be found in the folder **original_author_solution**
 
-### Krithika's Implementation of the SIGLIP: Vision Transformer
+### 1.2 Krithika's Implementation of the SIGLIP: Vision Transformer
 For a step by step implementation of the Vision Transformer i.e broken down into embeddings, single head attention, multi head attention, encoder layers etc refer to the notebooks in the folder **ksw_solution**. \
 <span style="color: blue"> **vit_step4_entire_Vit.ipynb:** </span> This is the complete implementation of the siglip: vision transformer \
 Note : Every notebook in the ksw_solution folder can be run independently. They have been tested to run error free.
 
-## <span style="color: green">  SIGLIP VISION TRANSFORMER </span>
+## <span style="color: green">  2. SIGLIP VISION TRANSFORMER </span>
+### 2.1 Siglip: High Level Overview
 At the highest level this consists of three blocks( the input and output are not really blocks)
 - **i)  Input:** Input Image in Pixels. This is fed to the Embeddings layer
 - **ii) Embeddings-SiglipEmbeddings:** : Consist of Patch and Position Embeddings
@@ -22,7 +23,7 @@ At the highest level this consists of three blocks( the input and output are not
 A Full Siglip: Vision Transformer Architecture Diagram can be found at the end of the Readme.
 The Embeddings and Encoder block consist of a number of smaller building blocks which will be described in the following sections. 
 
-### Code notes
+### 2.2 Code Notes
 Throughout the code and discussion. 
 - hidden_size = embedding_size (refers to embeddings)
 - num_hidden_layers = num_encoder_layers (got nothing to do with embeddings. Refers to the number of Single Encoder Layers that make up the Encoder block)
@@ -31,7 +32,7 @@ Throughout the code and discussion.
 - The Encoder : is a **series connection** of Single Encoder Layers
 
 
-## <span style="color: green"> INPUT IMAGE + PREPROCESS IMAGE </span>
+## <span style="color: green"> 3. INPUT IMAGE + PREPROCESS IMAGE </span>
 The model cannot accept the image as is. It has to be preprocessed to a form that the Siglip Vit can accept it
 ```
     preprocess = transforms.Compose([
@@ -48,7 +49,8 @@ The model cannot accept the image as is. It has to be preprocessed to a form tha
 - It has to be normalized: these numbers come from the Imagenet dataset (industry standard)
 - Unsqueeze the tensor to include the batch dimension so that the transformer model can use it . When only one image is being used in the batch, batch dimension is 1. (3,224,224) --> unsqueeze -->(1,3,224,224)
 
-## <span style="color: green">  EMBEDDINGS : SiglipEmbeddings </span>
+## <span style="color: green"> 4. EMBEDDINGS: SiglipEmbeddings </span>
+### <span style="color: blue"> 4.1 Embeddings: Overview </span>
 The image is coverted to embeddings. All the information in the image is captured by embeddings.
 
 ![Alt text](readme_imgs/embeddings.png)
@@ -65,7 +67,7 @@ num_patches = (image_size // patch_size)**2
 
 ```
 
-### <span style="color: blue"> Patch Embeddings </span>
+### <span style="color: blue"> 4.2 Patch Embeddings </span>
 This is the <u>output</u> of a big Conv2d filter.Patch Embeddings are not the Conv2d filter itself, even though in the code , the Conv filter and the embeddings could be interchangeably named . 
 
 - **Input:**  The image tensor is the input. Rather patches from the image tensor is the input. Remember patches are just cutting the image into n*n regions . 
@@ -144,7 +146,7 @@ iii) output: flattened_patch_embeddings.shape :  torch.Size([1, 196, 768])
 ```
 
 
-### <span style="color: blue"> Position Embeddings </span>  
+### <span style="color: blue"> 4.3 Position Embeddings </span>  
 This is the <u>output</u> of the nn.Embedding layer. Position Embeddings are not the embedding layer itself, even though in the code , the embedding layer and the position embeddings could be interchangeably named . 
 
 - **Input:**  Notice that the input to the module is <u>not the image_tensor , but rather a list of indices or the position ids </u>. 
@@ -225,7 +227,7 @@ i)   input : the list of position_ids
 
 ```
 
-### <span style="color: blue"> Total Embeddings </span> 
+### <span style="color: blue"> 4.4 Total Embeddings </span> 
 Add the flattened patch embeddings and position embeddings. \
 This will be the input to the First Single Encoder Layer of the Encoder Block
 
@@ -244,17 +246,17 @@ print("embeddings.shape :", embeddings.shape)
 embeddings.shape : torch.Size([1, 196, 768])
 ```
 
-### <span style="color: blue">  Visualise Embeddings </span> 
+### <span style="color: blue">  4.5 Visualise Embeddings </span> 
 See **vit_step1_img_prepocess_embeddings.ipynb** for visualization of Embeddings before and after Training.
 
-#### <span style="color: blue"> Visualize Embeddings : Before Training </span> 
+#### <span style="color: blue"> 4.5.1 Visualize Embeddings: Before Training </span> 
 - Patch embeddings are the output of a nn.Conv2d Filter , the weights have been randomly initialized. They have not been trained
 - Position embeddings are the output of a nn.Embedding lookup table, which is in randomly initialized as well. It is not trained. 
 - Hence the Patch Embeddings, Position Embeddings and the total Embeddings are not trained.\
 Because of this Patch Embeddings and Position Embeddings output should all look random
 - Notice that the total_embeddings look pretty similar to the patch embeddings , despite adding the position_embeddings.This is likely because position_embeddings are supposed to be small displacement vectors. And, that the change they have caused is not visible in such a visualization
 
-#### <span style="color: blue"> Visualize Embeddings : After Training </span>  
+#### <span style="color: blue"> 4.5.2 Visualize Embeddings: After Training </span>  
 - Its not that the  nn.Conv2d Filter , and nn.Embedding lookup table used to create untrained patch and position embeddings respectively have been trained. i.e. there is no model training or embeddings training step in **vit_step1_img_prepocess_embeddings.ipynb**
 - Instead download the pre-trained SiglipVisionModel from Hugging face . Visualize the trained embeddings from this model
 - Notice that even in the trained model, the total_embeddings look pretty similar to the patch embeddings . This is despite adding the position_embeddings.This is likely because position_embeddings are supposed to be small displacement vectors. And, that the change they have caused is not visible in such a visualization
@@ -263,15 +265,15 @@ Because of this Patch Embeddings and Position Embeddings output should all look 
 ![Alt text](readme_imgs/total_embeds_before_after_training.png)
 
 
-## <span style="color: green">  ATTENTION : SiglipAttention </span>
-### <span style="color: blue">  Attention Formula and Single Head of Attention </span>
+## <span style="color: green">  5. ATTENTION: SiglipAttention </span>
+### <span style="color: blue">  5.1 Attention Formula, and Single Head of Attention </span>
 
 ![Alt text](readme_imgs/attention_formula.png)
 
 My Notes
 ![Alt text](readme_imgs/attention_formula_single_head_attention.png)
 
-### <span style="color: blue">  Query , Key, Value Generation for Images </span>
+### <span style="color: blue">  5.2 Query, Key, Value Generation for Images </span>
 - Query, Key and Values are the core components of Self Attention. 
 - At a high level of understanding, each embedding i.e. in this case each of the 196 total_embeddings will emit 3 vectors : query , key and value (the embeddings will pass through the layer norm first though in the siglip transformer encoder, if we have to get into the weeds).
 - Query and Key generate the similarity score. 
@@ -287,28 +289,28 @@ My Notes
 
 ![Alt text](readme_imgs/kqv_linear_layers.jpg)
 
-### <span style="color: blue">  Attention Filter , Scale (dk) and Raw Attention Score </span>
+### <span style="color: blue">  5.3 Attention Filter, Scale (dk), and Raw Attention Score </span>
 **Attention filter:** Product of Q and K \
 **Scale Dk:** number of pixels along either the rows or column ( because of the Q*K-transpose multiplication, I suppose the output will always be a square. So #ofrows= #ofcolumns.\
 This scale is needed to prevent the dot product from growing too large. Think of it as a type of normalization. \
 **Raw Attention Score/ Similarity Score/ Scaled Attention Filter:** The scaled attention filter i.e attention_filter/sqrt(dk) is called Raw Attention Score. Notice that attention score is calculated using Query and Key only. Since the query and key vectors are compared using a dot product, this raw attetnion score determines their similarity. 
 
-### <span style="color: blue">  Softmax & Attention Weights. </span>
+### <span style="color: blue">  5.4 Softmax & Attention Weights. </span>
 **Softmax:** Turns the raw scores into probabilities. The softmax transforms the similarity score into attention weights , ensuring the weights sum to 1. 
 
 ![Alt text](readme_imgs/attention_filter_qk_scale_dk.png)
 
-### <span style="color: blue">  Single Head Attention Output Weighted sum </span>
+### <span style="color: blue">  5.5 Single Head Attention Output Weighted Sum </span>
 - attention = softmax(attention_filter/sqrt(dk))*V. 
 - softmax(attention_filter/sqrt(dk)) provides the weights. So the attention itself is a weighted sum of the Values. 
 - V is a vector. Softmax is also a vector output of probabilities. So this is also a dot product of two vectors. 
 - In the total sum(attention), the combination of highest softmax probability and highest elements of V will be the greatest contributors.
 
-### <span style="color: blue">  Single Head Attention  </span>
+### <span style="color: blue">  5.6 Single Head Attention  </span>
 Single head attention consists of all the Q, K, V multiplications , scaling and softmax discussed above. \
 Q, K, V in the Siglip: ViT are generated from the layernorm1 output in the respective "single encoder layer"
 
-### <span style="color: blue">  Multi Head Attention </span>
+### <span style="color: blue">  5.7 Multi Head Attention </span>
 This is a **PARALLEL CONCATENATION** of single head attention blocks, with a a linear layer at the end.\
 - The input to this is the output of the Layernorm1
 - Since it is a parallel concatenation of Single Attention Heads, the same layernorm1 output feeds into **all** the single head attention modules (in a given single encoder layer) as input. **So Q, K, V in every single attention head are generated from the same layernorm1 output of that respective single encoder layer**. \
@@ -336,7 +338,7 @@ If you are finding it confusing to associate the diagram on top with the diagram
 - **Final Linear Layer(s):** This remaps the output to an image of desired or original size Example 500*50 etc. (Check if this is accurate ??)
 ![Alt text](readme_imgs/multi_head_attention.jpg)
 
-## <span style="color: green">  MLP(Multi Layer Perception) : SiglipMLP-  </span>
+## <span style="color: green">  6. MLP(Multi Layer Perception): SiglipMLP-  </span>
 - **FC1:** fully connected layer 1
 - **gelu: tanh**
 - **FC2:** fully connected layer 2.
@@ -344,8 +346,8 @@ If you are finding it confusing to associate the diagram on top with the diagram
 A block diagram of this can be found in the Full Siglip: Vision Transformer Architecture Diagram
 
 
-## <span style="color: green">  ENCODER: SiglipEncoder </span>
-### <span style="color: blue">  Single Encoder Layer: SiglipEncoderLayer </span>
+## <span style="color: green">  7. ENCODER: SiglipEncoder </span>
+### <span style="color: blue">  7.1 Single Encoder Layer: SiglipEncoderLayer </span>
 Consists of the
 - **Layer Norm1**
 - **Self Attention module (multi attention head)**
@@ -360,22 +362,22 @@ Consists of the
 ![Alt text](readme_imgs/single_encoder_layer.png)
 
 
-### <span style="color: blue">  Encoder: SiglipEncoder </span>
+### <span style="color: blue">  7.2 Encoder: SiglipEncoder </span>
 - The Encoder is series connection of several Single Encoder Layers: SiglipEncoderLayer. 
 - The input to the SiglipEncoder and hence to the first SiglipEncoderLayer is the total_embeddings from the SiglipEmbedding module (this is the hidden_states input to the SiglipEncoderLayer #1)
 - The input to the second, third, .....last SiglipEncoderLayer is the output of the respective previous SiglipEncoderLayer.
 - The output of SiglipEncoder is the output(hidden_states) of the last SiglipEncoderLayer 
 - See **Siglip: Vision Transformer Architecture Diagram**
 
-## <span style="color: green">  POST NORM LAYER </span>
+## <span style="color: green">  8. POST NORM LAYER </span>
 - This is the last layer of the Siglip: Vision Transformer
 - The input to this is the output of the SiglipEncoder(hidden_states from the last SingleEncoderLayer within the Encoder)
 - The output of this post layer norm is the output of the Siglip: Vision Transformer/ Vision Model itself
  
-## <span style="color: green">  SIGLIP : VISION TRANSFORMER ARCHITECTURE DIAGRAM </span>
-### <span style="color: blue"> Highlevel: Siglip Vision Transformer Diagram </span>
+## <span style="color: green">  9. SIGLIP: VISION TRANSFORMER ARCHITECTURE DIAGRAM </span>
+### <span style="color: blue"> 9.1 Highlevel: Siglip Vision Transformer Diagram </span>
 Encoder on the right. Full Siglip Vit on the right
 ![Alt text](readme_imgs/encoder_and_vit_high_level_architecture.png)
 
-### <span style="color: blue"> Detailed: Siglip Vision Transformer Diagram </span>
+### <span style="color: blue"> 9.2 Detailed: Siglip Vision Transformer Diagram </span>
 ![Alt text](readme_imgs/full_siglip_vit_architecture.jpg)
