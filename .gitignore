@@ -1,0 +1,5 @@
+# Ignore Jupyter notebook checkpoints everywhere
+**/.ipynb_checkpoints/
+
+# Ignore temporary notebook conversion outputs
+*.nbconvert.ipynb
