@@ -265,7 +265,7 @@ Because of this Patch Embeddings and Position Embeddings output should all look 
 ![Alt text](readme_imgs/total_embeds_before_after_training.png)
 
 
-## <span style="color: green">  5. ATTENTION: SiglipAttention </span>
+## <span style="color: green">  5. ATTENTION </span>
 ### <span style="color: blue">  5.1 Attention Formula, and Single Head of Attention </span>
 
 ![Alt text](readme_imgs/attention_formula.png)
@@ -304,7 +304,8 @@ This scale is needed to prevent the dot product from growing too large. Think of
 - attention = softmax(attention_filter/sqrt(dk))*V. 
 - softmax(attention_filter/sqrt(dk)) provides the weights. So the attention itself is a weighted sum of the Values. 
 - V is a vector. Softmax is also a vector output of probabilities. So this is also a dot product of two vectors. 
-- In the total sum(attention), the combination of highest softmax probability and highest elements of V will be the greatest contributors.
+- in the total weighted sum(attention), the combination of highest softmax probability and highest elements of V will be the greatest contributors.
+- the weighted sum allows information flow between tokens(patches)
 
 ### <span style="color: blue">  5.6 Single Head Attention  </span>
 Single head attention consists of all the Q, K, V multiplications , scaling and softmax discussed above. \
@@ -338,7 +339,118 @@ If you are finding it confusing to associate the diagram on top with the diagram
 - **Final Linear Layer(s):** This remaps the output to an image of desired or original size Example 500*50 etc. (Check if this is accurate ??)
 ![Alt text](readme_imgs/multi_head_attention.jpg)
 
-## <span style="color: green">  6. MLP(Multi Layer Perception): SiglipMLP-  </span>
+
+## <span style="color: green">  6. VECTORIZED IMPLEMENTATION OF MULTI HEAD ATTENTION: SiglipAttention </span>
+- Vectorized implementation of Multi head attention. Same implementation as Hugging Face (different from the non vectorized implementation in vit_step3 Head and MultiHeadAttention classes)
+- You don't have Single Attention Heads. You process all single attention heads parallely
+- This is more memory efficient
+- This enables using Hugging Face's pretrained weights in our model
+
+#### 6.1 Vectorized Implementation: Overview
+In the vectorized implementation there might seem to be a lot of transposes, shape changes etc. \
+Here is a high leve overview of it. 
+- i)   q, k, v_states are the same dimensions as hidden_states = [1,196,768] = [batch, num_patches, embedding_dimension] 
+- ii)  split q,k,v_states into 12 attention heads, along the embedding_dimension (768)  = [1,196,12,64]
+- iii) transpose q,k, v_states so that its [batch, num_heads] first and then [196,64] for vectorized multiplication
+- iv)  attention filter = q*k_transpose is a square: [1,12, 196,196]
+- v)   scaled attention filter, softmax, dropout are all the same square = [1,12,196,196]
+- vi)  mutltiply attention_weights*v and the dimesion is back to : [ 1, 12, 196,64]
+- vii) transpose attention again so that [12,64] the embeddind dimensions are back together for the concatenation: [ 1,196,12,64]
+- viii) Concatenate: merge 12 attention heads to get back the embedding dimension 768=12*64: [1. 196, 768]
+- ix)   Project back to residual states shape(which happens to be the same): [1,196,768]
+
+
+#### 6.2 Evolution of Tensor Sizes in Vectorized Implementation
+** Code Output **
+
+```
+-----------SiglipAttention: forward details-------------
+----------------------------------------------------------------------------------------------------------
+Notice the dimensions at each stage to understand the vectorized implementation of multi head attention
+----------------------------------------------------------------------------------------------------------
+B (batch)              : 1
+T (#tokens = #patches) : 196
+C (embed_dim)          : 768
+
+
+-------------------------------------------------------------------------------------------------
+q_states, k_states, v_states: output of the linear layers
+-------------------------------------------------------------------------------------------------
+q_states.shape = torch.Size([1, 196, 768])
+k_states.shape = torch.Size([1, 196, 768])
+v_states.shape = torch.Size([1, 196, 768])
+
+
+-------------------------------------------------------------------------------------------------
+q_states, k_states, v_states: After splitting 768 to 12 attention heads
+-------------------------------------------------------------------------------------------------
+q_states.shape = torch.Size([1, 196, 12, 64])
+k_states.shape = torch.Size([1, 196, 12, 64])
+v_states.shape = torch.Size([1, 196, 12, 64])
+
+
+-------------------------------------------------------------------------------------------------
+q_states, k_states, v_states: transpose for easy vectorized dotproduct(mat-mul)
+so that first 2 dimensions are [batch_size, num_heads] = [1,12]
+last 2 dimensions are [num_patches, embed_dim/num_heads]= [196,64]
+-------------------------------------------------------------------------------------------------
+q_states.shape = torch.Size([1, 12, 196, 64])
+k_states.shape = torch.Size([1, 12, 196, 64])
+v_states.shape = torch.Size([1, 12, 196, 64])
+
+
+-------------------------------------------------------------------------------------------------
+Scale is the embedding dimension per single attention head = 768/12 = 64
+Note: in the dk scale diagram in the Readme.md (section 5.4) ,         
+ - you multiply [500,50] x[50,500] and the scale dk = 500.         
+   dk = 500 seems to be #of patches instead of the embedding size .(This could have been a mistake)         
+ - But here in the code, you multiply [196,64] x[64,196] for the attention filter.         
+  dk = 64 = embedding dimension. I think embedding dimension makes more sense
+-------------------------------------------------------------------------------------------------
+dk: scale =  64
+
+
+-------------------------------------------------------------------------------------------------
+ In all the below cases attn: shape is a square i.e 196*196)
+-------------------------------------------------------------------------------------------------
+i)  attn.shape: scaled attention filter    :  torch.Size([1, 12, 196, 196])
+
+
+----------------------------------------------------------------------------------------------------------------
+Apply softmax. Since attn is [196, 196] it makes no sense to normalize for the entire square 
+Apply softmax to get probability distribution along dim -1 = dim 1. This means across the columns i.e. rowwise
+----------------------------------------------------------------------------------------------------------------
+ii)  attn.shape: after softmax              :  torch.Size([1, 12, 196, 196])
+iii) attn.shape: after dropout              :  torch.Size([1, 12, 196, 196])
+
+
+-------------------------------------------------------------------------------------------------
+Multiply attn with v_states. Attention is back to [196,64]
+-------------------------------------------------------------------------------------------------
+iv) attn.shape: mult with v_states         :  torch.Size([1, 12, 196, 64])
+
+
+-------------------------------------------------------------------------------------------------
+Transpose it back to the original q_states view where [12,64] are the end
+[12,64] can be easily multiplied to recover the original embed_dim = 768
+-------------------------------------------------------------------------------------------------
+v) attn.shape: after transpose            :  torch.Size([1, 196, 12, 64])
+
+
+-------------------------------------------------------------------------------------------------
+Concatenate 12 attention heads so that [12x64] = 768
+-------------------------------------------------------------------------------------------------
+vi) attn.shape: after reshaping to B, T, C :  torch.Size([1, 196, 768])
+vii) attn.shape: after out_proj             :  torch.Size([1, 196, 768])
+
+
+------- End of SiglipAttention: Forward -------------- 
+
+```
+
+## <span style="color: green">  7. MLP(Multi Layer Perception): SiglipMLP  </span>
+This is just a bunch of linear layers to map the hidden state to some other output dimension
+Since the intermediate size is quite large at 3072 , you can learn more complex relations , at a higher dimension
 - **FC1:** fully connected layer 1
 - **gelu: tanh**
 - **FC2:** fully connected layer 2.
@@ -346,8 +458,8 @@ If you are finding it confusing to associate the diagram on top with the diagram
 A block diagram of this can be found in the Full Siglip: Vision Transformer Architecture Diagram
 
 
-## <span style="color: green">  7. ENCODER: SiglipEncoder </span>
-### <span style="color: blue">  7.1 Single Encoder Layer: SiglipEncoderLayer </span>
+## <span style="color: green">  8. ENCODER: SiglipEncoder </span>
+### <span style="color: blue">  8.1 Single Encoder Layer: SiglipEncoderLayer </span>
 Consists of the
 - **Layer Norm1**
 - **Self Attention module (multi attention head)**
@@ -362,22 +474,22 @@ Consists of the
 ![Alt text](readme_imgs/single_encoder_layer.png)
 
 
-### <span style="color: blue">  7.2 Encoder: SiglipEncoder </span>
+### <span style="color: blue">  8.2 Encoder: SiglipEncoder </span>
 - The Encoder is series connection of several Single Encoder Layers: SiglipEncoderLayer. 
 - The input to the SiglipEncoder and hence to the first SiglipEncoderLayer is the total_embeddings from the SiglipEmbedding module (this is the hidden_states input to the SiglipEncoderLayer #1)
 - The input to the second, third, .....last SiglipEncoderLayer is the output of the respective previous SiglipEncoderLayer.
 - The output of SiglipEncoder is the output(hidden_states) of the last SiglipEncoderLayer 
 - See **Siglip: Vision Transformer Architecture Diagram**
 
-## <span style="color: green">  8. POST NORM LAYER </span>
+## <span style="color: green">  9. POST NORM LAYER </span>
 - This is the last layer of the Siglip: Vision Transformer
 - The input to this is the output of the SiglipEncoder(hidden_states from the last SingleEncoderLayer within the Encoder)
 - The output of this post layer norm is the output of the Siglip: Vision Transformer/ Vision Model itself
  
-## <span style="color: green">  9. SIGLIP: VISION TRANSFORMER ARCHITECTURE DIAGRAM </span>
-### <span style="color: blue"> 9.1 Highlevel: Siglip Vision Transformer Diagram </span>
+## <span style="color: green">  10. SIGLIP: VISION TRANSFORMER ARCHITECTURE DIAGRAM </span>
+### <span style="color: blue"> 10.1 Highlevel: Siglip Vision Transformer Diagram </span>
 Encoder on the right. Full Siglip Vit on the right
 ![Alt text](readme_imgs/encoder_and_vit_high_level_architecture.png)
 
-### <span style="color: blue"> 9.2 Detailed: Siglip Vision Transformer Diagram </span>
+### <span style="color: blue"> 10.2 Detailed: Siglip Vision Transformer Diagram </span>
 ![Alt text](readme_imgs/full_siglip_vit_architecture.jpg)
